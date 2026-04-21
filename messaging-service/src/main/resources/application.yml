@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: messaging-service
+  config:
+    import: "optional:configserver:http://config-server:8888"
+
+#---
+#spring:
+#  config:
+#    activate:
+#      on-profile: docker
+#  data:
+#    mongodb:
+#      uri: mongodb://mongodb:27017/messaging_db

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Voom - Chat Trajet</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        #messages { border: 1px solid #ddd; height: 400px; overflow-y: auto; padding: 15px; margin-bottom: 10px; background-color: #fcfcfc; border-radius: 8px; }
+        .msg { margin-bottom: 8px; padding: 8px; border-radius: 5px; }
+        .msg-history { background-color: #f1f1f1; color: #777; }
+        .msg-live { background-color: #e3f2fd; border-left: 4px solid #2196f3; }
+        .controls { display: flex; gap: 10px; }
+        input { flex-grow: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 8px 15px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h2>Chat Trajet : <span id="displayTrajet">T123</span></h2>
+    
+    <div id="messages"></div>
+    
+    <div class="controls">
+        <input type="text" id="messageInput" placeholder="Tapez votre message...">
+        <button onclick="sendMessage()">Envoyer</button>
+    </div>
+
+    <script>
+        let stompClient = null;
+        
+        // Remplacez par votre IP trouvée à l'étape 1
+        const serverIP = "192.168.4.40"; 
+
+        const config = {
+            baseUrl: `http://${serverIP}:8083`,
+            clientId: 'Passager1', // Changez cet ID manuellement sur le second téléphone
+            riderId: 'Conducteur1',
+            trajetId: 'T123'
+        };
+
+        // ... le reste du code fetch et SockJS utilisera config.baseUrl
+
+
+        document.getElementById('displayTrajet').innerText = config.trajetId;
+
+        // 1. Chargement de l'historique via @GetMapping("/api/messages")
+        async function chargerHistorique() {
+            try {
+                const url = new URL(`${config.baseUrl}/api/messages`);
+                
+                // Ajout des @RequestParam requis par votre méthode loadMessages
+                url.search = new URLSearchParams({
+                    clientId: config.clientId,
+                    riderId: config.riderId,
+                    page: 0,
+                    size: 20
+                }).toString();
+
+                const response = await fetch(url);
+                
+                if (response.ok) {
+                    const messages = await response.json();
+                    messages.forEach(msg => {
+                        // On affiche l'expéditeur pour plus de clarté
+                        const label = msg.expediteurId === config.clientId ? "Moi" : "Lui";
+                        afficherMessage(`[${label}] : ${msg.contenu}`, 'msg-history');
+                    });
+                    scrollToBottom();
+                }
+            } catch (error) {
+                console.error("Erreur historique:", error);
+            }
+        }
+
+        // 2. Connexion WebSocket
+        function connect() {
+            const socket = new SockJS(`${config.baseUrl}/ws`); // Assurez-vous que l'endpoint est bien /ws dans WebSocketConfig
+            stompClient = Stomp.over(socket);
+
+            stompClient.connect({}, function (frame) {
+                console.log('Connecté: ' + frame);
+                
+                // Souscription au topic dynamique défini dans votre sendMessage() : 
+                // "/topic/trajet/" + response.trajetId()
+                stompClient.subscribe(`/topic/trajet/${config.trajetId}`, function (reponse) {
+                    const msgRecu = JSON.parse(reponse.body);
+                    const label = msgRecu.expediteurId === config.clientId ? "Moi" : "Lui";
+                    afficherMessage(`${label} : ${msgRecu.contenu}`, 'msg-live');
+                    scrollToBottom();
+                });
+            });
+        }
+
+        // 3. Envoi via @MessageMapping("/chat")
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const contenu = input.value.trim();
+            
+            if (!contenu || !stompClient) return;
+            
+            // Corps correspondant à votre MessageRequest DTO
+            const messageRequest = {
+                expediteurId: config.clientId, // On envoie en tant que clientId
+                destinataireId: config.riderId,
+                trajetId: config.trajetId,
+                contenu: contenu
+            };
+
+            // Envoi vers @MessageMapping("/chat") -> préfixé par /app (si configuré)
+            stompClient.send("/app/chat", {}, JSON.stringify(messageRequest));
+            input.value = '';
+        }
+
+        // Bonus: Marquer comme lu via @PatchMapping("/api/messages/{id}/read")
+        async function marquerCommeLu(messageId) {
+            await fetch(`${config.baseUrl}/api/messages/${messageId}/read`, {
+                method: 'PATCH'
+            });
+        }
+
+        function afficherMessage(texte, classeCss) {
+            const div = document.getElementById('messages');
+            const p = document.createElement('p');
+            p.className = `msg ${classeCss}`;
+            p.textContent = texte;
+            div.appendChild(p);
+        }
+
+        function scrollToBottom() {
+            const div = document.getElementById('messages');
+            div.scrollTop = div.scrollHeight;
+        }
+
+        window.onload = async () => {
+            await chargerHistorique();
+            connect();
+        };
+
+        // Permettre l'envoi avec la touche Entrée
+        document.getElementById('messageInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>

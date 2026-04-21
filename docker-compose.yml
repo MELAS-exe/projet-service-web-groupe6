@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  # Base de données pour les messages
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    networks:
+      covoiturage-net:
+        aliases:
+          - localhost
+
+  # Message Queue (pour la communication inter-services future)
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Interface d'administration web
+    networks:
+      - covoiturage-net
+
+  config-server:
+    build: ./config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./config-repo:/config-repo
+    networks:
+      - covoiturage-net
+    environment:
+      - SPRING_PROFILES_ACTIVE=native
+      - SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS=file:/config-repo
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      config-server:
+        condition: service_healthy
+    networks:
+      - covoiturage-net
+
+  messaging-service:
+    build: ./messaging-service
+    container_name: messaging-service
+    ports:
+      - "0.0.0.0:8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SERVER_ADDRESS=0.0.0.0
+      - SPRING_DATA_MONGODB_URI=mongodb://mongodb:27017/messaging_db
+      - SPRING_DATA_MONGODB_HOST=mongodb
+      - SPRING_DATA_MONGODB_PORT=27017
+      - SPRING_DATA_MONGODB_DATABASE=messaging_db
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=messaging_db
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    networks:
+      - covoiturage-net
+
+  matching-service:
+    build: ./MatchingService-main
+    container_name: matching-service
+    ports:
+      - "8086:8086"
+    depends_on:
+      config-server:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+    networks:
+      - covoiturage-net
+
+  iam-service:
+    build: ./iam-service
+    container_name: iam-service
+    ports:
+      - "8087:8087"
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_started
+    networks:
+      - covoiturage-net
+
+  # Base de données MySQL pour IAM et notifications
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=motDePasse
+      - MYSQL_DATABASE=voom_iam_db
+    networks:
+      - covoiturage-net
+
+  # Base de données PostgreSQL pour les paiements et matching
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=payment_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - covoiturage-net
+
+networks:
+  covoiturage-net:
+    driver: bridge

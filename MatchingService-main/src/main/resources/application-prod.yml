@@ -1,0 +1,65 @@
+server:
+  port: 8080
+
+#pour le swagger
+springdoc:
+  show-javadoc=true:
+
+spring:
+  application:
+    name: matchingservice
+  datasource:
+    url: jdbc:postgresql:///voom_matching?cloudSqlInstance=${CLOUD_SQL_INSTANCE}&socketFactory=com.google.cloud.sql.postgres.SocketFactory
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: false
+
+matching:
+  rayon-km-defaut: 3.0
+  tolerance-minutes-defaut: 20
+  capacite-vehicule-defaut: 4
+  seuil-batch: 3
+  fenetre-jours-avance: 7
+  expiration-affectation-minutes: 15
+  delai-annulation-orpheline-minutes: 30
+  poids-geo: 0.35
+  poids-temps: 0.35
+  poids-bagage: 0.20
+  poids-type: 0.10
+  delai-attente-optimisation-minutes: 15
+  scheduler-actif-heures-debut: 6
+  scheduler-actif-heures-fin: 22
+  intervalle-scheduler-creux-ms: 300000
+  intervalle-scheduler-pic-ms: 60000
+  seuil-pic-demandes: 5
+
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    sn.Voom.matchingservice: INFO
+    org.hibernate.SQL: WARN
